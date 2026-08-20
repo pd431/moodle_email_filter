@@ -25,7 +25,7 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'filter_emailautolink';
-$plugin->version    = 2026082000;
-$plugin->requires   = 2022112800; // Moodle 4.1 (introduces core_filters\text_filter).
+$plugin->version    = 2026082001;
+$plugin->requires   = 2024100700; // Moodle 4.5.0 (4.1 LTS reached end of life 2025-11-11).
 $plugin->maturity   = MATURITY_STABLE;
-$plugin->release    = '1.0.0';
+$plugin->release    = '2.0.0';

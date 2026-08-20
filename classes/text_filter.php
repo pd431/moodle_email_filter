@@ -19,11 +19,16 @@ namespace filter_emailautolink;
 /**
  * Converts plain-text email addresses into clickable mailto: links.
  *
- * Text is split into alternating HTML-tag / non-tag chunks so that the
- * email pattern is only ever applied to actual visible text: it never
- * touches attribute values, and it is suppressed entirely while inside
- * an existing <a>, <script> or <style> element so links, markup and
- * scripting are never rewritten or nested.
+ * Architecture mirrors filter_urltolink, core's closest filter in kind, and reuses the same
+ * two core mechanisms rather than a bespoke parser:
+ *  - filter_save_ignore_tags() extracts whole ignore-regions (the same tag list
+ *    filter_phrases() uses by default, see lib/filterlib.php, plus <style>, which that list
+ *    omits) so an existing <a> (mailto or otherwise), <script>, <style>, form control, or an
+ *    author's own <nolink>/class="nolink" escape hatch is never touched.
+ *  - What is left is tokenized into tag/non-tag chunks and every tag chunk is skipped outright,
+ *    so a standalone tag with no closing pair (e.g. <img alt="user@example.com">) never leaks
+ *    its attributes to the email pattern either.
+ * The email pattern only ever runs against genuine text nodes.
  *
  * @package    filter_emailautolink
  * @copyright  2026 Auto-link email addresses filter contributors
@@ -43,70 +48,91 @@ class text_filter extends \core_filters\text_filter {
         '/\b[a-zA-Z0-9.!#$%&\'*+\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?'
         . '(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+\b/';
 
-    /** Tag names that suppress linking anywhere inside them. */
-    private const SKIP_TAGS = 'a|script|style';
-
     /**
-     * Filter the given HTML fragment, wrapping plain-text email addresses
-     * in mailto: links.
-     *
-     * @param string $text HTML fragment to filter.
-     * @param array $options filter options (unused by this filter).
-     * @return string filtered text.
+     * Maximum length of a single space-delimited "word" that will be run
+     * through the email pattern. ReDoS/pathological-input safety net,
+     * mirrors filter_urltolink's identical per-word length check.
      */
+    private const MAX_WORD_LENGTH = 4096;
+
+    #[\Override]
     public function filter($text, array $options = []) {
-        if (!is_string($text) || $text === '' || stripos($text, '@') === false) {
+        if (!isset($options['originalformat'])) {
+            // No originalformat means we were most likely called from format_string()
+            // (e.g. for a title), where tags are usually stripped afterwards. Linking here
+            // would be wasted work and risks leaking a stray <a> into a plain-string context.
+            // Mirrors the same guard in filter_urltolink.
             return $text;
         }
-
-        // Split into alternating [text, tag, text, tag, ...] chunks.
-        $chunks = preg_split('/(<[^>]*>)/', $text, -1, PREG_SPLIT_DELIM_CAPTURE);
-        if ($chunks === false) {
+        if ($options['originalformat'] == FORMAT_PLAIN) {
+            // Plain text is never rendered as HTML, so injecting a link would just leak markup
+            // into the visible output.
             return $text;
         }
-        if (count($chunks) === 1) {
-            // No markup at all: filter the whole string directly.
-            return $this->link_emails($text);
-        }
-
-        $skipdepth = 0; // > 0 while inside a <a>, <script> or <style> element.
-        $output = '';
-
-        foreach ($chunks as $chunk) {
-            if ($chunk === '') {
-                continue;
-            }
-
-            if ($chunk[0] === '<') {
-                if (preg_match('/^<\s*(' . self::SKIP_TAGS . ')(?:[\s>\/]|$)/i', $chunk)) {
-                    $skipdepth++;
-                } else if (preg_match('/^<\s*\/\s*(' . self::SKIP_TAGS . ')\s*>/i', $chunk)) {
-                    $skipdepth = max(0, $skipdepth - 1);
-                }
-                $output .= $chunk;
-                continue;
-            }
-
-            $output .= $skipdepth > 0 ? $chunk : $this->link_emails($chunk);
-        }
-
-        return $output;
-    }
-
-    /**
-     * Wrap every plain-text email address found in a text-only chunk
-     * (no markup, no attributes) with a mailto: link.
-     *
-     * @param string $text plain text chunk.
-     * @return string the chunk with emails linked.
-     */
-    private function link_emails(string $text): string {
         if (stripos($text, '@') === false) {
             return $text;
         }
 
-        return preg_replace_callback(self::EMAIL_PATTERN, function (array $match): string {
-            return '<a href="mailto:' . $match[0] . '">' . $match[0] . '</a>';
-        }, $text);
+        // Protect existing markup using the same mechanism, and largely the same tag list,
+        // that core's filter_phrases() uses by default (see lib/filterlib.php): <a> so existing
+        // links (mailto or otherwise) are never touched or nested, <script>/<style> so code and
+        // CSS are never rewritten, <textarea>/<select> so form content is left alone, and
+        // <nolink>/<span class="nolink"> so authors keep their usual escape hatch from filters.
+        $filterignoretagsopen = [
+            '<head>', '<nolink>', '<span(\s[^>]*?)?class="nolink"(\s[^>]*?)?>',
+            '<script(\s[^>]*?)?>', '<style(\s[^>]*?)?>', '<textarea(\s[^>]*?)?>',
+            '<select(\s[^>]*?)?>', '<a(\s[^>]*?)?>',
+        ];
+        $filterignoretagsclose = [
+            '</head>', '</nolink>', '</span>',
+            '</script>', '</style>', '</textarea>',
+            '</select>', '</a>',
+        ];
+        $ignoretags = [];
+        filter_save_ignore_tags($text, $filterignoretagsopen, $filterignoretagsclose, $ignoretags);
+
+        // filter_save_ignore_tags() only protects paired regions (open tag ... close tag). A
+        // standalone tag with no closing pair, e.g. <img alt="user@example.com">, would still
+        // have its attributes exposed to the email pattern below. So, exactly like
+        // filter_urltolink, additionally tokenize what is left into tag/non-tag chunks and skip
+        // every tag chunk outright: only genuine text nodes are ever passed to link_emails().
+        $chunks = preg_split('/(<[^<|>]*>)/i', $text, -1, PREG_SPLIT_NO_EMPTY | PREG_SPLIT_DELIM_CAPTURE);
+        foreach ($chunks as $index => $chunk) {
+            if (strpos(trim($chunk), '<') === 0) {
+                continue;
+            }
+            $chunks[$index] = $this->link_emails($chunk);
+        }
+        $text = implode('', $chunks);
+
+        if (!empty($ignoretags)) {
+            // Reversed so "progressive" str_replace() will solve some nesting problems, same
+            // idiom filter_phrases() and filter_urltolink use to restore their ignored tags.
+            $ignoretags = array_reverse($ignoretags);
+            $text = str_replace(array_keys($ignoretags), $ignoretags, $text);
+        }
+
+        return $text;
+    }
+
+    /**
+     * Wrap every plain-text email address with a mailto: link.
+     *
+     * Called only with a single tag-free chunk of text, so every match here is genuine
+     * visible text - never markup or an attribute value.
+     *
+     * @param string $text text to link.
+     * @return string the text with emails linked.
+     */
+    private function link_emails(string $text): string {
+        $words = explode(' ', $text);
+        foreach ($words as $index => $word) {
+            if (strlen($word) < self::MAX_WORD_LENGTH) {
+                $words[$index] = preg_replace_callback(self::EMAIL_PATTERN, function (array $match): string {
+                    return '<a href="mailto:' . $match[0] . '">' . $match[0] . '</a>';
+                }, $word);
+            }
+        }
+        return implode(' ', $words);
     }
 }
