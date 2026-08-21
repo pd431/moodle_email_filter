@@ -128,11 +128,23 @@ class text_filter extends \core_filters\text_filter {
         $words = explode(' ', $text);
         foreach ($words as $index => $word) {
             if (strlen($word) < self::MAX_WORD_LENGTH) {
-                $words[$index] = preg_replace_callback(self::EMAIL_PATTERN, function (array $match): string {
-                    return '<a href="mailto:' . $match[0] . '">' . $match[0] . '</a>';
-                }, $word);
+                $words[$index] = preg_replace_callback(self::EMAIL_PATTERN, [self::class, 'link_email'], $word);
             }
         }
         return implode(' ', $words);
+    }
+
+    /**
+     * Wrap a single matched email address in a mailto: link.
+     *
+     * One match at a time, same as filter_emailprotect's alter_email()/alter_mailto(): this is
+     * the preg_replace_callback callback for a single EMAIL_PATTERN match, not a loop over all
+     * of them.
+     *
+     * @param array $matches regex match; $matches[0] is the whole matched email address.
+     * @return string the address wrapped in a mailto: link.
+     */
+    private function link_email($matches) {
+        return '<a href="mailto:' . $matches[0] . '">' . $matches[0] . '</a>';
     }
 }
