@@ -25,6 +25,9 @@
 defined('MOODLE_INTERNAL') || die();
 
 if ($ADMIN->fulltree) {
+    $settings->add(new admin_setting_heading('filter_emailautolink/filterorder',
+            '', get_string('filterorder_desc', 'filter_emailautolink')));
+
     $settings->add(new admin_setting_configcheckbox('filter_emailautolink/overrideexisting',
             get_string('overrideexisting', 'filter_emailautolink'),
             get_string('overrideexisting_desc', 'filter_emailautolink'),
