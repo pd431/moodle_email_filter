@@ -28,3 +28,56 @@ Feature: Auto-link email addresses in content
       | content                                                | element                           |
       | See <img src="a.png" alt="a\|jane@example.com"> here   | img[alt='a\|jane@example.com']    |
       | See <span title="a\|jane@example.com">this</span> here | span[title='a\|jane@example.com'] |
+
+  Scenario Outline: Text that only looks like part of an address is not linked
+    Given the following "activities" exist:
+      | activity | course | name   | content   |
+      | page     | C1     | Page 1 | <content> |
+    When I am on the "Page 1" "page activity" page logged in as student1
+    Then "a[href^='mailto:']" "css_element" should not exist
+    And I should see "<visible>"
+
+    Examples:
+      | content                                        | visible                          |
+      | Go to https://example.com/?to=jane@example.com | example.com/?to=jane@example.com |
+      | Go to https://user@example.com/x               | user@example.com/x               |
+      | Write to a?subject=Hi&cc=b@example.com         | a?subject=Hi&cc=b@example.com    |
+      | Upload logo@2x.png and install react@18.3.1    | logo@2x.png                      |
+      | Clone git@github.com:org/repo                  | git@github.com:org/repo          |
+
+  Scenario: An address next to sentence punctuation links only the address
+    Given the following "activities" exist:
+      | activity | course | name   | content                                           |
+      | page     | C1     | Page 1 | Email (jane@example.com), or o'brien@example.com. |
+    When I am on the "Page 1" "page activity" page logged in as student1
+    Then "a[href='mailto:jane@example.com']" "css_element" should exist
+    And "a[href=\"mailto:o'brien@example.com\"]" "css_element" should exist
+
+  Scenario Outline: A valid accented address is linked as a whole
+    Given the following "activities" exist:
+      | activity | course | name   | content            |
+      | page     | C1     | Page 1 | Write to <address> |
+    When I am on the "Page 1" "page activity" page logged in as student1
+    Then "a[href='mailto:<href>']" "css_element" should exist
+    And I should see "<address>" in the "a[href='mailto:<href>']" "css_element"
+
+    Examples:
+      | address          | href                       |
+      | tést@example.com | t%C3%A9st@example.com      |
+      | éva@example.com  | %C3%A9va@example.com       |
+      | jöe@exämple.de   | j%C3%B6e@xn--exmple-cua.de |
+
+  Scenario Outline: An invalid accented address is not linked at all
+    Given the following "activities" exist:
+      | activity | course | name   | content            |
+      | page     | C1     | Page 1 | Write to <address> |
+    When I am on the "Page 1" "page activity" page logged in as student1
+    Then "a[href^='mailto:']" "css_element" should not exist
+    And I should see "<address>"
+
+    Examples:
+      | address             |
+      | tést@exämple        |
+      | tést@-example.com   |
+      | tést..x@example.com |
+      | .tést@example.com   |

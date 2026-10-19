@@ -182,6 +182,86 @@ final class text_filter_test extends advanced_testcase {
         ];
     }
 
+    /**
+     * Text that only contains something address-like, glued to other characters, is not linked.
+     *
+     * @dataProvider not_an_address_provider
+     * @param string $text
+     */
+    public function test_text_that_only_looks_like_an_address_is_not_linked(string $text): void {
+        $this->resetAfterTest();
+        $this->assertSame($text, $this->filter_as_format($this->get_filter(), $text));
+    }
+
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public static function not_an_address_provider(): array {
+        return [
+            'query string in a URL' => ['Go to https://example.com/?to=jane@example.com'],
+            'user in a URL' => ['Go to https://user@example.com/x'],
+            'mailto parameters' => ['Write to a?subject=Hi&amp;cc=b@example.com'],
+            'image file name' => ['Upload logo@2x.png'],
+            'package version' => ['Install react@18.3.1'],
+            'git remote' => ['Clone git@github.com:org/repo'],
+            'domain without a dot' => ['Write to tést@exämple'],
+            'domain label starting with a hyphen' => ['Write to tést@-example.com'],
+            'two dots in the local part' => ['Write to tést..x@example.com'],
+            'local part starting with a dot' => ['Write to .tést@example.com'],
+            'glued to a preceding letter' => ['Write to a–jane@example.com'],
+            'not valid UTF-8' => ["Write to j\xC3ane@example.com"],
+        ];
+    }
+
+    /**
+     * A valid accented address is linked as a whole, encoded in the href as RFC 6068 requires.
+     *
+     * @dataProvider accented_address_provider
+     * @param string $address
+     * @param string $href
+     */
+    public function test_accented_address_is_linked_whole(string $address, string $href): void {
+        $this->resetAfterTest();
+        $out = $this->filter_as_format($this->get_filter(), "Write to {$address} today");
+        $this->assertSame("Write to <a href=\"mailto:{$href}\">{$address}</a> today", $out);
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string}>
+     */
+    public static function accented_address_provider(): array {
+        return [
+            'accent inside the local part' => ['tést@example.com', 't%C3%A9st@example.com'],
+            'accent at the start of the local part' => ['éva@example.com', '%C3%A9va@example.com'],
+            'accented domain' => ['jöe@exämple.de', 'j%C3%B6e@xn--exmple-cua.de'],
+        ];
+    }
+
+    /**
+     * Punctuation and the entities HTML cleaning produces around an address are not linked.
+     *
+     * @dataProvider surrounding_punctuation_provider
+     * @param string $in
+     * @param string $expected
+     */
+    public function test_surrounding_punctuation_is_not_linked(string $in, string $expected): void {
+        $this->resetAfterTest();
+        $this->assertSame($expected, $this->filter_as_format($this->get_filter(), $in));
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string}>
+     */
+    public static function surrounding_punctuation_provider(): array {
+        $link = '<a href="mailto:jane@example.com">jane@example.com</a>';
+        return [
+            'brackets and comma' => ['Email (jane@example.com), please', "Email ({$link}), please"],
+            'angle brackets' => ['Jane &lt;jane@example.com&gt;', "Jane &lt;{$link}&gt;"],
+            'non-breaking spaces' => ['Email&nbsp;jane@example.com&nbsp;now', "Email&nbsp;{$link}&nbsp;now"],
+            'quotes' => ['"jane@example.com"', "\"{$link}\""],
+        ];
+    }
+
     public function test_trailing_sentence_punctuation_is_not_swallowed(): void {
         $this->resetAfterTest();
         $out = $this->filter_as_format($this->get_filter(), 'Email jane@example.com.');

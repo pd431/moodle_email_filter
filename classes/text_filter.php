@@ -37,16 +37,38 @@ namespace filter_emailautolink;
 class text_filter extends \core_filters\text_filter {
 
     /**
-     * A sane, fixed pattern for a plain-text email address.
-     *
-     * Local part: the common set of unquoted RFC 5322 atext characters.
-     * Domain: one or more dot-separated labels, each starting and ending
-     * with an alphanumeric character, so trailing sentence punctuation
-     * (e.g. "email me at jane@example.com.") is never swallowed.
+     * Local part of an address: letters (any script) and digits, with _ + - and single . or '
+     * between them. Characters such as / ? = & % that RFC 5322 allows but real addresses do not
+     * use are left out, so query strings and URLs never become part of a match.
      */
-    private const EMAIL_PATTERN =
-        '/\b[a-zA-Z0-9.!#$%&\'*+\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?'
-        . '(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+\b/';
+    private const LOCAL_PART = "[\\p{L}\\p{M}\\p{N}_+-]+(?:[.'][\\p{L}\\p{M}\\p{N}_+-]+)*";
+
+    /**
+     * Domain of an address: dot-separated labels of letters (any script), digits and inner
+     * hyphens, ending in a label of at least two letters (so react@18.3.1 is not an address).
+     */
+    private const DOMAIN = '(?:[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?\\.)+'
+        . '\\p{L}[\\p{L}\\p{M}]{1,62}';
+
+    /**
+     * A plain-text email address standing as its own word.
+     *
+     * It must be preceded by the start of the text, a space or opening punctuation, and followed
+     * by the end of the text or a space, optionally after closing punctuation. So an address glued
+     * to other characters, such as inside a URL (https://user@example.com/x, ?to=jane@example.com)
+     * or followed by more text (git@github.com:org/repo), is not linked at all rather than linked
+     * in part. The entities HTML cleaning produces for spaces, quotes and angle brackets count as
+     * the characters they stand for.
+     */
+    private const EMAIL_PATTERN = '/(?:(?<![^\\s\\x{00A0}(\\[{"\'\\x{201C}\\x{2018}\\x{00AB}:,])|(?<=&nbsp;|&quot;|&lt;))'
+        . '(' . self::LOCAL_PART . ')@(' . self::DOMAIN . ')'
+        . '(?=[.,;:!?)\\]}"\'\\x{201D}\\x{2019}\\x{00BB}]*(?:[\\s\\x{00A0}]|$|&nbsp;|&quot;|&gt;))/u';
+
+    /**
+     * Final domain labels that are image file extensions rather than top-level domains, so a file
+     * name such as logo@2x.png is not linked. None of these is a real top-level domain.
+     */
+    private const NOT_TLDS = ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico'];
 
     /**
      * Maximum length of a single space-delimited "word" that will be run
@@ -138,7 +160,8 @@ class text_filter extends \core_filters\text_filter {
         $words = explode(' ', $text);
         foreach ($words as $index => $word) {
             if (strlen($word) < self::MAX_WORD_LENGTH) {
-                $words[$index] = preg_replace_callback(self::EMAIL_PATTERN, [self::class, 'link_email'], $word);
+                // Null means the word is not valid UTF-8; leave it as it was.
+                $words[$index] = preg_replace_callback(self::EMAIL_PATTERN, [self::class, 'link_email'], $word) ?? $word;
             }
         }
         return implode(' ', $words);
@@ -151,10 +174,39 @@ class text_filter extends \core_filters\text_filter {
      * the preg_replace_callback callback for a single EMAIL_PATTERN match, not a loop over all
      * of them.
      *
-     * @param array $matches regex match; $matches[0] is the whole matched email address.
-     * @return string the address wrapped in a mailto: link.
+     * @param array $matches regex match: [0] the whole address, [1] its local part, [2] its domain.
+     * @return string the address wrapped in a mailto: link, or unchanged if it is not linkable.
      */
     private function link_email($matches) {
-        return \html_writer::link('mailto:' . $matches[0], s($matches[0]));
+        $href = self::mailto_address($matches[1], $matches[2]);
+        if ($href === null) {
+            return $matches[0];
+        }
+        return \html_writer::link('mailto:' . $href, s($matches[0]));
+    }
+
+    /**
+     * Build the address part of a mailto: URI, as RFC 6068 requires.
+     *
+     * Non-ASCII characters in the local part are percent-encoded as UTF-8, and an accented
+     * domain is converted to its ASCII (punycode) form.
+     *
+     * @param string $local local part of the address.
+     * @param string $domain domain of the address.
+     * @return string|null the encoded address, or null if it should not be linked.
+     */
+    private static function mailto_address(string $local, string $domain): ?string {
+        $labels = explode('.', $domain);
+        if (in_array(\core_text::strtolower(end($labels)), self::NOT_TLDS, true)) {
+            return null;
+        }
+        if (preg_match('/[^\\x00-\\x7F]/', $domain)) {
+            $domain = idn_to_ascii($domain, IDNA_NONTRANSITIONAL_TO_ASCII, INTL_IDNA_VARIANT_UTS46);
+            if ($domain === false) {
+                return null;
+            }
+        }
+        $local = preg_replace_callback('/[^\\x00-\\x7F]+/', fn($m) => rawurlencode($m[0]), $local);
+        return $local . '@' . $domain;
     }
 }
