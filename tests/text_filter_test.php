@@ -151,6 +151,12 @@ final class text_filter_test extends advanced_testcase {
         $this->assertSame($in, $this->filter_as_format($this->get_filter(), $in));
     }
 
+    public function test_email_inside_code_samples_is_untouched(): void {
+        $this->resetAfterTest();
+        $in = '<pre>ssh jane@example.com</pre><p>Run <code>git clone bob@example.com</code></p>';
+        $this->assertSame($in, $this->filter_as_format($this->get_filter(), $in));
+    }
+
     public function test_email_inside_textarea_is_untouched(): void {
         $this->resetAfterTest();
         $in = '<textarea>jane@example.com</textarea>';

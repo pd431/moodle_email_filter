@@ -81,3 +81,10 @@ Feature: Auto-link email addresses in content
       | tést@-example.com   |
       | tést..x@example.com |
       | .tést@example.com   |
+
+  Scenario: Addresses in code samples are not linked
+    Given the following "activities" exist:
+      | activity | course | name   | content                                                     |
+      | page     | C1     | Page 1 | <pre>ssh jane@example.com</pre><code>bob@example.com</code> |
+    When I am on the "Page 1" "page activity" page logged in as student1
+    Then "a[href^='mailto:']" "css_element" should not exist
