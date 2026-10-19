@@ -26,3 +26,4 @@ defined('MOODLE_INTERNAL') || die();
 
 $string['pluginname'] = 'Auto-link email addresses';
 $string['filtername'] = 'Auto-link email addresses';
+$string['privacy:metadata'] = 'The Auto-link email addresses filter does not store any personal data.';
