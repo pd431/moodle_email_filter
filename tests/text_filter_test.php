@@ -110,6 +110,35 @@ final class text_filter_test extends advanced_testcase {
         $this->assertSame($in, $this->filter_as_format($this->get_filter(), $in));
     }
 
+    /**
+     * A '|' in an attribute must not make the tag look like text (regression for link injection).
+     *
+     * @dataProvider pipe_in_attribute_provider
+     * @param string $text
+     */
+    public function test_email_in_attribute_containing_pipe_is_untouched(string $text): void {
+        $this->resetAfterTest();
+        $this->assertSame($text, $this->filter_as_format($this->get_filter(), $text));
+    }
+
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public static function pipe_in_attribute_provider(): array {
+        return [
+            'void tag' => ['See <img src="a.png" alt="a|jane@example.com"> here'],
+            'paired tag' => ['See <span title="a|jane@example.com">this</span> here'],
+            'raw < inside attribute' => ['See <img alt="a<b jane@example.com"> here'],
+        ];
+    }
+
+    public function test_link_is_html_escaped(): void {
+        $this->resetAfterTest();
+        $out = $this->filter_as_format($this->get_filter(), "Write to o'brien@example.com today");
+        $this->assertSame(
+            'Write to <a href="mailto:o&#039;brien@example.com">o&#039;brien@example.com</a> today', $out);
+    }
+
     public function test_email_inside_nolink_span_is_untouched(): void {
         $this->resetAfterTest();
         $in = '<span class="nolink">Contact jane@example.com</span>';

@@ -96,9 +96,19 @@ class text_filter extends \core_filters\text_filter {
         // have its attributes exposed to the email pattern below. So, exactly like
         // filter_urltolink, additionally tokenize what is left into tag/non-tag chunks and skip
         // every tag chunk outright: only genuine text nodes are ever passed to link_emails().
-        $chunks = preg_split('/(<[^<|>]*>)/i', $text, -1, PREG_SPLIT_NO_EMPTY | PREG_SPLIT_DELIM_CAPTURE);
+        // Unlike filter_urltolink, '|' is not excluded from the tag pattern: excluding it would make
+        // a tag whose attribute contains '|' (e.g. <img alt="a|jane@example.com">) look like text,
+        // and a link would be injected into the attribute. Filters run after HTML cleaning, so
+        // nothing would repair that.
+        $chunks = preg_split('/(<[^<>]*>)/', $text, -1, PREG_SPLIT_NO_EMPTY | PREG_SPLIT_DELIM_CAPTURE);
         foreach ($chunks as $index => $chunk) {
             if (strpos(trim($chunk), '<') === 0) {
+                continue;
+            }
+            if (strpbrk($chunk, '<>') !== false) {
+                // Cleaned text nodes never contain a raw < or >, so a chunk that still does is
+                // markup the tokenizer could not split (e.g. a < inside an attribute value). It
+                // may be inside a tag, so leave it alone rather than risk linking into it.
                 continue;
             }
             $chunks[$index] = $this->link_emails($chunk);
@@ -145,6 +155,6 @@ class text_filter extends \core_filters\text_filter {
      * @return string the address wrapped in a mailto: link.
      */
     private function link_email($matches) {
-        return '<a href="mailto:' . $matches[0] . '">' . $matches[0] . '</a>';
+        return \html_writer::link('mailto:' . $matches[0], s($matches[0]));
     }
 }
