@@ -145,6 +145,32 @@ final class text_filter_test extends advanced_testcase {
         $this->assertSame($in, $this->filter_as_format($this->get_filter(), $in));
     }
 
+    /**
+     * @dataProvider nolink_among_classes_provider
+     * @param string $in
+     */
+    public function test_email_inside_span_with_nolink_among_classes_is_untouched(string $in): void {
+        $this->resetAfterTest();
+        $this->assertSame($in, $this->filter_as_format($this->get_filter(), $in));
+    }
+
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public static function nolink_among_classes_provider(): array {
+        return [
+            'nolink first' => ['<span class="nolink small">Contact jane@example.com</span>'],
+            'nolink last' => ['<span class="small nolink">Contact jane@example.com</span>'],
+            'nolink in the middle' => ['<span lang="en" class="a nolink b">Contact jane@example.com</span>'],
+        ];
+    }
+
+    public function test_class_that_only_contains_nolink_does_not_protect(): void {
+        $this->resetAfterTest();
+        $out = $this->filter_as_format($this->get_filter(), '<span class="nolinks">jane@example.com</span>');
+        $this->assertStringContainsString('mailto:jane@example.com', $out);
+    }
+
     public function test_email_inside_nolink_tag_is_untouched(): void {
         $this->resetAfterTest();
         $in = '<nolink>Contact jane@example.com</nolink>';

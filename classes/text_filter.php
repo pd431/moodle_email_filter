@@ -99,10 +99,11 @@ class text_filter extends \core_filters\text_filter {
         // that core's filter_phrases() uses by default (see lib/filterlib.php): <a> so existing
         // links (mailto or otherwise) are never touched or nested, <script>/<style> so code and
         // CSS are never rewritten, <textarea>/<select> so form content is left alone, and
-        // <nolink>/<span class="nolink"> so authors keep their usual escape hatch from filters,
+        // <nolink>/<span class="nolink"> (also among other classes) so authors keep their usual
+        // escape hatch from filters,
         // and <pre>/<code> so addresses in code samples (ssh jane@host, git remotes) stay as typed.
         $filterignoretagsopen = [
-            '<head>', '<nolink>', '<span(\s[^>]*?)?class="nolink"(\s[^>]*?)?>',
+            '<head>', '<nolink>', '<span(\s[^>]*?)?class="(?:[^"]*\s)?nolink(?:\s[^"]*)?"(\s[^>]*?)?>',
             '<script(\s[^>]*?)?>', '<style(\s[^>]*?)?>', '<textarea(\s[^>]*?)?>',
             '<select(\s[^>]*?)?>', '<a(\s[^>]*?)?>', '<pre(\s[^>]*?)?>', '<code(\s[^>]*?)?>',
         ];

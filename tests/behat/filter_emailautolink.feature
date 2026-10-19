@@ -88,3 +88,16 @@ Feature: Auto-link email addresses in content
       | page     | C1     | Page 1 | <pre>ssh jane@example.com</pre><code>bob@example.com</code> |
     When I am on the "Page 1" "page activity" page logged in as student1
     Then "a[href^='mailto:']" "css_element" should not exist
+
+  Scenario Outline: Text marked nolink is not rewritten
+    Given the following "activities" exist:
+      | activity | course | name   | content   |
+      | page     | C1     | Page 1 | <content> |
+    When I am on the "Page 1" "page activity" page logged in as student1
+    Then "a[href^='mailto:']" "css_element" should not exist
+    And I should see "jane@example.com"
+
+    Examples:
+      | content                                                    |
+      | <span class="nolink">Contact jane@example.com</span>       |
+      | <span class="nolink small">Contact jane@example.com</span> |
