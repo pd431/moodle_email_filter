@@ -18,7 +18,10 @@ namespace filter_emailautolink;
 
 use advanced_testcase;
 use core\context\system;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 
+#[CoversClass(text_filter::class)]
 /**
  * Unit tests for the Auto-link email addresses filter.
  *
@@ -29,9 +32,10 @@ use core\context\system;
  * @covers     \filter_emailautolink\text_filter
  */
 final class text_filter_test extends advanced_testcase {
-
     /**
-     * @return text_filter a filter instance bound to the system context.
+     * Get a filter instance bound to the system context.
+     *
+     * @return text_filter
      */
     private function get_filter(): text_filter {
         return new text_filter(system::instance(), []);
@@ -62,9 +66,13 @@ final class text_filter_test extends advanced_testcase {
         $this->resetAfterTest();
         $out = $this->filter_as_format($this->get_filter(), '<p>jane@example.com</p><p>john@example.org</p>');
         $this->assertStringContainsString(
-            '<a href="mailto:jane@example.com">jane@example.com</a>', $out);
+            '<a href="mailto:jane@example.com">jane@example.com</a>',
+            $out
+        );
         $this->assertStringContainsString(
-            '<a href="mailto:john@example.org">john@example.org</a>', $out);
+            '<a href="mailto:john@example.org">john@example.org</a>',
+            $out
+        );
     }
 
     public function test_repeated_address_is_linked_every_time(): void {
@@ -99,6 +107,7 @@ final class text_filter_test extends advanced_testcase {
      * @param string $in
      * @param string $expected
      */
+    #[DataProvider('override_existing_provider')]
     public function test_override_existing_mailto_links(string $in, string $expected): void {
         $this->resetAfterTest();
         set_config('overrideexisting', 1, 'filter_emailautolink');
@@ -106,6 +115,8 @@ final class text_filter_test extends advanced_testcase {
     }
 
     /**
+     * Data provider.
+     *
      * @return array<string, array{0: string, 1: string}>
      */
     public static function override_existing_provider(): array {
@@ -167,12 +178,15 @@ final class text_filter_test extends advanced_testcase {
      * @dataProvider pipe_in_attribute_provider
      * @param string $text
      */
+    #[DataProvider('pipe_in_attribute_provider')]
     public function test_email_in_attribute_containing_pipe_is_untouched(string $text): void {
         $this->resetAfterTest();
         $this->assertSame($text, $this->filter_as_format($this->get_filter(), $text));
     }
 
     /**
+     * Data provider.
+     *
      * @return array<string, array{0: string}>
      */
     public static function pipe_in_attribute_provider(): array {
@@ -187,7 +201,9 @@ final class text_filter_test extends advanced_testcase {
         $this->resetAfterTest();
         $out = $this->filter_as_format($this->get_filter(), "Write to o'brien@example.com today");
         $this->assertSame(
-            'Write to <a href="mailto:o&#039;brien@example.com">o&#039;brien@example.com</a> today', $out);
+            'Write to <a href="mailto:o&#039;brien@example.com">o&#039;brien@example.com</a> today',
+            $out
+        );
     }
 
     public function test_email_inside_nolink_span_is_untouched(): void {
@@ -197,15 +213,20 @@ final class text_filter_test extends advanced_testcase {
     }
 
     /**
+     * A span with nolink among other classes protects its content.
+     *
      * @dataProvider nolink_among_classes_provider
      * @param string $in
      */
+    #[DataProvider('nolink_among_classes_provider')]
     public function test_email_inside_span_with_nolink_among_classes_is_untouched(string $in): void {
         $this->resetAfterTest();
         $this->assertSame($in, $this->filter_as_format($this->get_filter(), $in));
     }
 
     /**
+     * Data provider.
+     *
      * @return array<string, array{0: string}>
      */
     public static function nolink_among_classes_provider(): array {
@@ -247,14 +268,19 @@ final class text_filter_test extends advanced_testcase {
     }
 
     /**
+     * Malformed or partial addresses are not linked.
+     *
      * @dataProvider malformed_email_provider
      */
+    #[DataProvider('malformed_email_provider')]
     public function test_malformed_email_like_text_is_not_linked(string $text): void {
         $this->resetAfterTest();
         $this->assertSame($text, $this->filter_as_format($this->get_filter(), $text));
     }
 
     /**
+     * Data provider.
+     *
      * @return array<string, array{0: string}>
      */
     public static function malformed_email_provider(): array {
@@ -271,12 +297,15 @@ final class text_filter_test extends advanced_testcase {
      * @dataProvider not_an_address_provider
      * @param string $text
      */
+    #[DataProvider('not_an_address_provider')]
     public function test_text_that_only_looks_like_an_address_is_not_linked(string $text): void {
         $this->resetAfterTest();
         $this->assertSame($text, $this->filter_as_format($this->get_filter(), $text));
     }
 
     /**
+     * Data provider.
+     *
      * @return array<string, array{0: string}>
      */
     public static function not_an_address_provider(): array {
@@ -303,6 +332,7 @@ final class text_filter_test extends advanced_testcase {
      * @param string $address
      * @param string $href
      */
+    #[DataProvider('accented_address_provider')]
     public function test_accented_address_is_linked_whole(string $address, string $href): void {
         $this->resetAfterTest();
         $out = $this->filter_as_format($this->get_filter(), "Write to {$address} today");
@@ -310,6 +340,8 @@ final class text_filter_test extends advanced_testcase {
     }
 
     /**
+     * Data provider.
+     *
      * @return array<string, array{0: string, 1: string}>
      */
     public static function accented_address_provider(): array {
@@ -327,12 +359,15 @@ final class text_filter_test extends advanced_testcase {
      * @param string $in
      * @param string $expected
      */
+    #[DataProvider('surrounding_punctuation_provider')]
     public function test_surrounding_punctuation_is_not_linked(string $in, string $expected): void {
         $this->resetAfterTest();
         $this->assertSame($expected, $this->filter_as_format($this->get_filter(), $in));
     }
 
     /**
+     * Data provider.
+     *
      * @return array<string, array{0: string, 1: string}>
      */
     public static function surrounding_punctuation_provider(): array {
@@ -349,7 +384,9 @@ final class text_filter_test extends advanced_testcase {
         $this->resetAfterTest();
         $out = $this->filter_as_format($this->get_filter(), 'Email jane@example.com.');
         $this->assertSame(
-            'Email <a href="mailto:jane@example.com">jane@example.com</a>.', $out);
+            'Email <a href="mailto:jane@example.com">jane@example.com</a>.',
+            $out
+        );
     }
 
     public function test_large_page_links_all_addresses(): void {

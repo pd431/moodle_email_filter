@@ -16,6 +16,39 @@ Feature: Auto-link email addresses in content
       | student1 | C1     | student |
     And the "emailautolink" filter is "on"
 
+  Scenario: An email address in a page becomes a link to that address
+    Given the following "activities" exist:
+      | activity | course | name   | content                               |
+      | page     | C1     | Page 1 | Contact jane.doe@example.com for help |
+    When I am on the "Page 1" "page activity" page logged in as student1
+    Then "a[href='mailto:jane.doe@example.com']" "css_element" should exist
+    And I should see "jane.doe@example.com"
+
+  Scenario: Addresses stay plain text when the filter is off
+    Given the "emailautolink" filter is "off"
+    And the following "activities" exist:
+      | activity | course | name   | content                               |
+      | page     | C1     | Page 1 | Contact jane.doe@example.com for help |
+    When I am on the "Page 1" "page activity" page logged in as student1
+    Then "a[href^='mailto:']" "css_element" should not exist
+    And I should see "jane.doe@example.com"
+
+  Scenario: Activity names are never turned into links
+    Given the following "activities" exist:
+      | activity | course | name                 | content |
+      | page     | C1     | Ask jane@example.com | Body    |
+    When I am on the "Course 1" course page logged in as student1
+    Then I should see "Ask jane@example.com"
+    And "a[href='mailto:jane@example.com']" "css_element" should not exist
+
+  Scenario: An existing link is not rewritten
+    Given the following "activities" exist:
+      | activity | course | name   | content                                                        |
+      | page     | C1     | Page 1 | <a href="https://example.com/contact">jane.doe@example.com</a> |
+    When I am on the "Page 1" "page activity" page logged in as student1
+    Then "a[href='https://example.com/contact']" "css_element" should exist
+    And "a[href^='mailto:']" "css_element" should not exist
+
   Scenario Outline: An address inside an attribute containing a pipe is left alone
     Given the following "activities" exist:
       | activity | course | name  | intro     |

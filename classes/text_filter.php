@@ -26,7 +26,7 @@ namespace filter_emailautolink;
  *    omits) so an existing <a> (mailto or otherwise), <script>, <style>, form control, or an
  *    author's own <nolink>/class="nolink" escape hatch is never touched.
  *  - What is left is tokenized into tag/non-tag chunks and every tag chunk is skipped outright,
- *    so a standalone tag with no closing pair (e.g. <img alt="user@example.com">) never leaks
+ *    so a standalone tag with no closing pair (e.g. an <img> with an address in its alt) never leaks
  *    its attributes to the email pattern either.
  * The email pattern only ever runs against genuine text nodes.
  *
@@ -35,34 +35,33 @@ namespace filter_emailautolink;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class text_filter extends \core_filters\text_filter {
-
     /**
      * Local part of an address: letters (any script) and digits, with _ + - and single . or '
      * between them. Characters such as / ? = & % that RFC 5322 allows but real addresses do not
      * use are left out, so query strings and URLs never become part of a match.
      */
-    private const LOCAL_PART = "[\\p{L}\\p{M}\\p{N}_+-]+(?:[.'][\\p{L}\\p{M}\\p{N}_+-]+)*";
+    private const LOCAL_PART = '[\p{L}\p{M}\p{N}_+-]+(?:[.\'][\p{L}\p{M}\p{N}_+-]+)*';
 
     /**
      * Domain of an address: dot-separated labels of letters (any script), digits and inner
      * hyphens, ending in a label of at least two letters (so react@18.3.1 is not an address).
      */
-    private const DOMAIN = '(?:[\\p{L}\\p{N}](?:[\\p{L}\\p{M}\\p{N}-]{0,61}[\\p{L}\\p{M}\\p{N}])?\\.)+'
-        . '\\p{L}[\\p{L}\\p{M}]{1,62}';
+    private const DOMAIN = '(?:[\p{L}\p{N}](?:[\p{L}\p{M}\p{N}-]{0,61}[\p{L}\p{M}\p{N}])?\.)+'
+        . '\p{L}[\p{L}\p{M}]{1,62}';
 
     /**
      * A plain-text email address standing as its own word.
      *
      * It must be preceded by the start of the text, a space or opening punctuation, and followed
      * by the end of the text or a space, optionally after closing punctuation. So an address glued
-     * to other characters, such as inside a URL (https://user@example.com/x, ?to=jane@example.com)
-     * or followed by more text (git@github.com:org/repo), is not linked at all rather than linked
-     * in part. The entities HTML cleaning produces for spaces, quotes and angle brackets count as
-     * the characters they stand for.
+     * to other characters, such as inside a URL (as its user or in its query string) or followed
+     * by more text (a git remote), is not linked at all rather than linked in part. The entities
+     * HTML cleaning produces for spaces, quotes and angle brackets count as the characters they
+     * stand for.
      */
-    private const EMAIL_PATTERN = '/(?:(?<![^\\s\\x{00A0}(\\[{"\'\\x{201C}\\x{2018}\\x{00AB}:,])|(?<=&nbsp;|&quot;|&lt;))'
+    private const EMAIL_PATTERN = '/(?:(?<![^\s\x{00A0}(\[{"\'\x{201C}\x{2018}\x{00AB}:,])|(?<=&nbsp;|&quot;|&lt;))'
         . '(' . self::LOCAL_PART . ')@(' . self::DOMAIN . ')'
-        . '(?=[.,;:!?)\\]}"\'\\x{201D}\\x{2019}\\x{00BB}]*(?:[\\s\\x{00A0}]|$|&nbsp;|&quot;|&gt;))/u';
+        . '(?=[.,;:!?)\]}"\'\x{201D}\x{2019}\x{00BB}]*(?:[\s\x{00A0}]|$|&nbsp;|&quot;|&gt;))/u';
 
     /**
      * Final domain labels that are image file extensions rather than top-level domains, so a file
@@ -119,7 +118,7 @@ class text_filter extends \core_filters\text_filter {
         $ignoretags = [];
         filter_save_ignore_tags($text, $filterignoretagsopen, $filterignoretagsclose, $ignoretags);
 
-        // filter_save_ignore_tags() only protects paired regions (open tag ... close tag). A
+        // The filter_save_ignore_tags() call only protects paired regions (open tag ... close tag). A
         // standalone tag with no closing pair, e.g. <img alt="user@example.com">, would still
         // have its attributes exposed to the email pattern below. So, exactly like
         // filter_urltolink, additionally tokenize what is left into tag/non-tag chunks and skip
@@ -232,13 +231,13 @@ class text_filter extends \core_filters\text_filter {
         if (in_array(\core_text::strtolower(end($labels)), self::NOT_TLDS, true)) {
             return null;
         }
-        if (preg_match('/[^\\x00-\\x7F]/', $domain)) {
+        if (preg_match('/[^\x00-\x7F]/', $domain)) {
             $domain = idn_to_ascii($domain, IDNA_NONTRANSITIONAL_TO_ASCII, INTL_IDNA_VARIANT_UTS46);
             if ($domain === false) {
                 return null;
             }
         }
-        $local = preg_replace_callback('/[^\\x00-\\x7F]+/', fn($m) => rawurlencode($m[0]), $local);
+        $local = preg_replace_callback('/[^\x00-\x7F]+/', fn($m) => rawurlencode($m[0]), $local);
         return $local . '@' . $domain;
     }
 }
