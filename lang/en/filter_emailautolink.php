@@ -27,3 +27,5 @@ defined('MOODLE_INTERNAL') || die();
 $string['pluginname'] = 'Auto-link email addresses';
 $string['filtername'] = 'Auto-link email addresses';
 $string['privacy:metadata'] = 'The Auto-link email addresses filter does not store any personal data.';
+$string['overrideexisting'] = 'Override existing email links';
+$string['overrideexisting_desc'] = 'When enabled, an existing mailto: link whose whole visible text is one email address is changed to send to that address. Anything after the address in the link, such as a subject or cc, is kept. Web links and mailto: links with any other text are not changed.';

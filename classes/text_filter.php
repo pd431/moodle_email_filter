@@ -95,6 +95,10 @@ class text_filter extends \core_filters\text_filter {
             return $text;
         }
 
+        if (get_config('filter_emailautolink', 'overrideexisting') && stripos($text, 'mailto:') !== false) {
+            $text = $this->override_mailto_links($text);
+        }
+
         // Protect existing markup using the same mechanism, and largely the same tag list,
         // that core's filter_phrases() uses by default (see lib/filterlib.php): <a> so existing
         // links (mailto or otherwise) are never touched or nested, <script>/<style> so code and
@@ -167,6 +171,32 @@ class text_filter extends \core_filters\text_filter {
             }
         }
         return implode(' ', $words);
+    }
+
+    /**
+     * Make each mailto: link whose whole visible text is one valid address send to that address.
+     *
+     * Only the address in the href changes: the link's other attributes, its text and anything
+     * after the address (?subject=, cc) are kept. Links with any other text are left alone.
+     *
+     * @param string $text text to process.
+     * @return string the text with existing mailto: links pointing at the address they show.
+     */
+    private function override_mailto_links(string $text): string {
+        $pattern = '/(<a\s[^>]*?\bhref=")mailto:[^"?]*((?:\?[^"]*)?"[^>]*>)(.*?)(<\/a>)/is';
+        return preg_replace_callback($pattern, function (array $m): string {
+            $visible = html_entity_decode(strip_tags($m[3]), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            $visible = preg_replace('/^[\s\x{00A0}]+|[\s\x{00A0}]+$/u', '', $visible) ?? '';
+            $address = '/^(' . self::LOCAL_PART . ')@(' . self::DOMAIN . ')$/u';
+            if (!preg_match($address, $visible, $parts)) {
+                return $m[0];
+            }
+            $href = self::mailto_address($parts[1], $parts[2]);
+            if ($href === null) {
+                return $m[0];
+            }
+            return $m[1] . 'mailto:' . s($href) . $m[2] . $m[3] . $m[4];
+        }, $text) ?? $text;
     }
 
     /**

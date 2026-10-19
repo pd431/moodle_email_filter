@@ -92,6 +92,57 @@ final class text_filter_test extends advanced_testcase {
         $this->assertSame($in, $this->filter_as_format($this->get_filter(), $in));
     }
 
+    /**
+     * With overrideexisting on, only mailto: links that show one valid address are changed.
+     *
+     * @dataProvider override_existing_provider
+     * @param string $in
+     * @param string $expected
+     */
+    public function test_override_existing_mailto_links(string $in, string $expected): void {
+        $this->resetAfterTest();
+        set_config('overrideexisting', 1, 'filter_emailautolink');
+        $this->assertSame($expected, $this->filter_as_format($this->get_filter(), $in));
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string}>
+     */
+    public static function override_existing_provider(): array {
+        return [
+            'address shown' => [
+                '<a href="mailto:old@example.com">jane@example.com</a>',
+                '<a href="mailto:jane@example.com">jane@example.com</a>',
+            ],
+            'subject and cc kept' => [
+                '<a href="mailto:old@example.com?subject=Hi&amp;cc=x@example.com">jane@example.com</a>',
+                '<a href="mailto:jane@example.com?subject=Hi&amp;cc=x@example.com">jane@example.com</a>',
+            ],
+            'other attributes and inner markup kept' => [
+                '<a class="btn" href="mailto:old@example.com" title="Mail"> <strong>tést@example.com</strong> </a>',
+                '<a class="btn" href="mailto:t%C3%A9st@example.com" title="Mail"> <strong>tést@example.com</strong> </a>',
+            ],
+            'text is not an address' => [
+                '<a href="mailto:old@example.com">Email the office</a>',
+                '<a href="mailto:old@example.com">Email the office</a>',
+            ],
+            'text has more than an address' => [
+                '<a href="mailto:old@example.com">Email jane@example.com</a>',
+                '<a href="mailto:old@example.com">Email jane@example.com</a>',
+            ],
+            'web link showing an address' => [
+                '<a href="https://example.com/">jane@example.com</a>',
+                '<a href="https://example.com/">jane@example.com</a>',
+            ],
+        ];
+    }
+
+    public function test_override_existing_is_off_by_default(): void {
+        $this->resetAfterTest();
+        $in = '<a href="mailto:old@example.com">jane@example.com</a>';
+        $this->assertSame($in, $this->filter_as_format($this->get_filter(), $in));
+    }
+
     public function test_email_inside_script_block_is_untouched(): void {
         $this->resetAfterTest();
         $in = '<script>var x = "user@example.com";</script>';

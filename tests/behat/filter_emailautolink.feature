@@ -101,3 +101,35 @@ Feature: Auto-link email addresses in content
       | content                                                    |
       | <span class="nolink">Contact jane@example.com</span>       |
       | <span class="nolink small">Contact jane@example.com</span> |
+
+  Scenario: Existing email links are left alone by default
+    Given the following "activities" exist:
+      | activity | course | name   | content                                               |
+      | page     | C1     | Page 1 | <a href="mailto:old@example.com">jane@example.com</a> |
+    When I am on the "Page 1" "page activity" page logged in as student1
+    Then "a[href='mailto:old@example.com']" "css_element" should exist
+
+  Scenario: An admin can turn on overriding existing email links
+    Given I log in as "admin"
+    When I navigate to "Plugins > Filters > Auto-link email addresses" in site administration
+    Then the field "Override existing email links" matches value "0"
+    And I set the field "Override existing email links" to "1"
+    And I press "Save changes"
+    And the field "Override existing email links" matches value "1"
+
+  Scenario Outline: With overriding on, only mailto links showing an address are changed
+    Given the following config values are set as admin:
+      | config           | value | plugin               |
+      | overrideexisting | 1     | filter_emailautolink |
+    And the following "activities" exist:
+      | activity | course | name   | content   |
+      | page     | C1     | Page 1 | <content> |
+    When I am on the "Page 1" "page activity" page logged in as student1
+    Then "<after>" "css_element" should exist
+
+    Examples:
+      | content                                                          | after                                        |
+      | <a href="mailto:old@example.com">jane@example.com</a>            | a[href='mailto:jane@example.com']            |
+      | <a href="mailto:old@example.com?subject=Hi">jane@example.com</a> | a[href='mailto:jane@example.com?subject=Hi'] |
+      | <a href="mailto:old@example.com">Email the office</a>            | a[href='mailto:old@example.com']             |
+      | <a href="https://example.com/">jane@example.com</a>              | a[href='https://example.com/']               |
