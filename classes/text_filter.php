@@ -26,7 +26,7 @@ namespace filter_emailautolink;
  *    omits) so an existing <a> (mailto or otherwise), <script>, <style>, form control, or an
  *    author's own <nolink>/class="nolink" escape hatch is never touched.
  *  - What is left is tokenized into tag/non-tag chunks and every tag chunk is skipped outright,
- *    so a standalone tag with no closing pair (e.g. <img alt="user@example.com">) never leaks
+ *    so a standalone tag with no closing pair (e.g. an <img> with an address in its alt) never leaks
  *    its attributes to the email pattern either.
  * The email pattern only ever runs against genuine text nodes.
  *
@@ -35,18 +35,39 @@ namespace filter_emailautolink;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class text_filter extends \core_filters\text_filter {
+    /**
+     * Local part of an address: letters (any script) and digits, with _ + - and single . or '
+     * between them. Characters such as / ? = & % that RFC 5322 allows but real addresses do not
+     * use are left out, so query strings and URLs never become part of a match.
+     */
+    private const LOCAL_PART = '[\p{L}\p{M}\p{N}_+-]+(?:[.\'][\p{L}\p{M}\p{N}_+-]+)*';
 
     /**
-     * A sane, fixed pattern for a plain-text email address.
-     *
-     * Local part: the common set of unquoted RFC 5322 atext characters.
-     * Domain: one or more dot-separated labels, each starting and ending
-     * with an alphanumeric character, so trailing sentence punctuation
-     * (e.g. "email me at jane@example.com.") is never swallowed.
+     * Domain of an address: dot-separated labels of letters (any script), digits and inner
+     * hyphens, ending in a label of at least two letters (so react@18.3.1 is not an address).
      */
-    private const EMAIL_PATTERN =
-        '/\b[a-zA-Z0-9.!#$%&\'*+\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?'
-        . '(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+\b/';
+    private const DOMAIN = '(?:[\p{L}\p{N}](?:[\p{L}\p{M}\p{N}-]{0,61}[\p{L}\p{M}\p{N}])?\.)+'
+        . '\p{L}[\p{L}\p{M}]{1,62}';
+
+    /**
+     * A plain-text email address standing as its own word.
+     *
+     * It must be preceded by the start of the text, a space or opening punctuation, and followed
+     * by the end of the text or a space, optionally after closing punctuation. So an address glued
+     * to other characters, such as inside a URL (as its user or in its query string) or followed
+     * by more text (a git remote), is not linked at all rather than linked in part. The entities
+     * HTML cleaning produces for spaces, quotes and angle brackets count as the characters they
+     * stand for.
+     */
+    private const EMAIL_PATTERN = '/(?:(?<![^\s\x{00A0}(\[{"\'\x{201C}\x{2018}\x{00AB}:,])|(?<=&nbsp;|&quot;|&lt;))'
+        . '(' . self::LOCAL_PART . ')@(' . self::DOMAIN . ')'
+        . '(?=[.,;:!?)\]}"\'\x{201D}\x{2019}\x{00BB}]*(?:[\s\x{00A0}]|$|&nbsp;|&quot;|&gt;))/u';
+
+    /**
+     * Final domain labels that are image file extensions rather than top-level domains, so a file
+     * name such as logo@2x.png is not linked. None of these is a real top-level domain.
+     */
+    private const NOT_TLDS = ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico'];
 
     /**
      * Maximum length of a single space-delimited "word" that will be run
@@ -73,32 +94,48 @@ class text_filter extends \core_filters\text_filter {
             return $text;
         }
 
+        if (get_config('filter_emailautolink', 'overrideexisting') && stripos($text, 'mailto:') !== false) {
+            $text = $this->override_mailto_links($text);
+        }
+
         // Protect existing markup using the same mechanism, and largely the same tag list,
         // that core's filter_phrases() uses by default (see lib/filterlib.php): <a> so existing
         // links (mailto or otherwise) are never touched or nested, <script>/<style> so code and
         // CSS are never rewritten, <textarea>/<select> so form content is left alone, and
-        // <nolink>/<span class="nolink"> so authors keep their usual escape hatch from filters.
+        // <nolink>/<span class="nolink"> (also among other classes) so authors keep their usual
+        // escape hatch from filters,
+        // and <pre>/<code> so addresses in code samples (ssh jane@host, git remotes) stay as typed.
         $filterignoretagsopen = [
-            '<head>', '<nolink>', '<span(\s[^>]*?)?class="nolink"(\s[^>]*?)?>',
+            '<head>', '<nolink>', '<span(\s[^>]*?)?class="(?:[^"]*\s)?nolink(?:\s[^"]*)?"(\s[^>]*?)?>',
             '<script(\s[^>]*?)?>', '<style(\s[^>]*?)?>', '<textarea(\s[^>]*?)?>',
-            '<select(\s[^>]*?)?>', '<a(\s[^>]*?)?>',
+            '<select(\s[^>]*?)?>', '<a(\s[^>]*?)?>', '<pre(\s[^>]*?)?>', '<code(\s[^>]*?)?>',
         ];
         $filterignoretagsclose = [
             '</head>', '</nolink>', '</span>',
             '</script>', '</style>', '</textarea>',
-            '</select>', '</a>',
+            '</select>', '</a>', '</pre>', '</code>',
         ];
         $ignoretags = [];
         filter_save_ignore_tags($text, $filterignoretagsopen, $filterignoretagsclose, $ignoretags);
 
-        // filter_save_ignore_tags() only protects paired regions (open tag ... close tag). A
+        // The filter_save_ignore_tags() call only protects paired regions (open tag ... close tag). A
         // standalone tag with no closing pair, e.g. <img alt="user@example.com">, would still
         // have its attributes exposed to the email pattern below. So, exactly like
         // filter_urltolink, additionally tokenize what is left into tag/non-tag chunks and skip
         // every tag chunk outright: only genuine text nodes are ever passed to link_emails().
-        $chunks = preg_split('/(<[^<|>]*>)/i', $text, -1, PREG_SPLIT_NO_EMPTY | PREG_SPLIT_DELIM_CAPTURE);
+        // Unlike filter_urltolink, '|' is not excluded from the tag pattern: excluding it would make
+        // a tag whose attribute contains '|' (e.g. <img alt="a|jane@example.com">) look like text,
+        // and a link would be injected into the attribute. Filters run after HTML cleaning, so
+        // nothing would repair that.
+        $chunks = preg_split('/(<[^<>]*>)/', $text, -1, PREG_SPLIT_NO_EMPTY | PREG_SPLIT_DELIM_CAPTURE);
         foreach ($chunks as $index => $chunk) {
             if (strpos(trim($chunk), '<') === 0) {
+                continue;
+            }
+            if (strpbrk($chunk, '<>') !== false) {
+                // Cleaned text nodes never contain a raw < or >, so a chunk that still does is
+                // markup the tokenizer could not split (e.g. a < inside an attribute value). It
+                // may be inside a tag, so leave it alone rather than risk linking into it.
                 continue;
             }
             $chunks[$index] = $this->link_emails($chunk);
@@ -128,10 +165,37 @@ class text_filter extends \core_filters\text_filter {
         $words = explode(' ', $text);
         foreach ($words as $index => $word) {
             if (strlen($word) < self::MAX_WORD_LENGTH) {
-                $words[$index] = preg_replace_callback(self::EMAIL_PATTERN, [self::class, 'link_email'], $word);
+                // Null means the word is not valid UTF-8; leave it as it was.
+                $words[$index] = preg_replace_callback(self::EMAIL_PATTERN, [self::class, 'link_email'], $word) ?? $word;
             }
         }
         return implode(' ', $words);
+    }
+
+    /**
+     * Make each mailto: link whose whole visible text is one valid address send to that address.
+     *
+     * Only the address in the href changes: the link's other attributes, its text and anything
+     * after the address (?subject=, cc) are kept. Links with any other text are left alone.
+     *
+     * @param string $text text to process.
+     * @return string the text with existing mailto: links pointing at the address they show.
+     */
+    private function override_mailto_links(string $text): string {
+        $pattern = '/(<a\s[^>]*?\bhref=")mailto:[^"?]*((?:\?[^"]*)?"[^>]*>)(.*?)(<\/a>)/is';
+        return preg_replace_callback($pattern, function (array $m): string {
+            $visible = html_entity_decode(strip_tags($m[3]), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            $visible = preg_replace('/^[\s\x{00A0}]+|[\s\x{00A0}]+$/u', '', $visible) ?? '';
+            $address = '/^(' . self::LOCAL_PART . ')@(' . self::DOMAIN . ')$/u';
+            if (!preg_match($address, $visible, $parts)) {
+                return $m[0];
+            }
+            $href = self::mailto_address($parts[1], $parts[2]);
+            if ($href === null) {
+                return $m[0];
+            }
+            return $m[1] . 'mailto:' . s($href) . $m[2] . $m[3] . $m[4];
+        }, $text) ?? $text;
     }
 
     /**
@@ -141,10 +205,39 @@ class text_filter extends \core_filters\text_filter {
      * the preg_replace_callback callback for a single EMAIL_PATTERN match, not a loop over all
      * of them.
      *
-     * @param array $matches regex match; $matches[0] is the whole matched email address.
-     * @return string the address wrapped in a mailto: link.
+     * @param array $matches regex match: [0] the whole address, [1] its local part, [2] its domain.
+     * @return string the address wrapped in a mailto: link, or unchanged if it is not linkable.
      */
     private function link_email($matches) {
-        return '<a href="mailto:' . $matches[0] . '">' . $matches[0] . '</a>';
+        $href = self::mailto_address($matches[1], $matches[2]);
+        if ($href === null) {
+            return $matches[0];
+        }
+        return \html_writer::link('mailto:' . $href, s($matches[0]));
+    }
+
+    /**
+     * Build the address part of a mailto: URI, as RFC 6068 requires.
+     *
+     * Non-ASCII characters in the local part are percent-encoded as UTF-8, and an accented
+     * domain is converted to its ASCII (punycode) form.
+     *
+     * @param string $local local part of the address.
+     * @param string $domain domain of the address.
+     * @return string|null the encoded address, or null if it should not be linked.
+     */
+    private static function mailto_address(string $local, string $domain): ?string {
+        $labels = explode('.', $domain);
+        if (in_array(\core_text::strtolower(end($labels)), self::NOT_TLDS, true)) {
+            return null;
+        }
+        if (preg_match('/[^\x00-\x7F]/', $domain)) {
+            $domain = idn_to_ascii($domain, IDNA_NONTRANSITIONAL_TO_ASCII, INTL_IDNA_VARIANT_UTS46);
+            if ($domain === false) {
+                return null;
+            }
+        }
+        $local = preg_replace_callback('/[^\x00-\x7F]+/', fn($m) => rawurlencode($m[0]), $local);
+        return $local . '@' . $domain;
     }
 }

@@ -1,0 +1,44 @@
+name: Tag release
+
+# Tags each build on main as v<release> from version.php once CI has passed on it.
+# An existing tag is never moved: if the tag already exists the job does nothing.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push') }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the commit CI passed on
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Read release from version.php
+        id: version
+        run: |
+          release=$(sed -n "s/^\$plugin->release *= *'\([^']*\)'.*/\1/p" version.php)
+          if [ -z "$release" ]; then echo "No \$plugin->release in version.php" >&2; exit 1; fi
+          echo "tag=v$release" >> "$GITHUB_OUTPUT"
+
+      - name: Create the tag if it does not exist
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" > /dev/null; then
+            echo "$TAG already exists; not moving it."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "refs/tags/$TAG"

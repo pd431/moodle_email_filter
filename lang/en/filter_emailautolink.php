@@ -24,5 +24,9 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$string['pluginname'] = 'Auto-link email addresses';
 $string['filtername'] = 'Auto-link email addresses';
+$string['filterorder_desc'] = 'Put this filter above "Email protection" in the list on the Manage filters page. Email protection then hides the address inside the link this filter makes. If Email protection runs first, it hides addresses from this filter and nothing is linked.';
+$string['overrideexisting'] = 'Override existing email links';
+$string['overrideexisting_desc'] = 'When enabled, an existing mailto: link whose whole visible text is one email address is changed to send to that address. Anything after the address in the link, such as a subject or cc, is kept. Web links and mailto: links with any other text are not changed.';
+$string['pluginname'] = 'Auto-link email addresses';
+$string['privacy:metadata'] = 'The Auto-link email addresses filter does not store any personal data.';
