@@ -1,5 +1,9 @@
 # Changes
 
+## 0.3.1 (beta)
+
+- Copyright set to Pierre Camaly de Brosses - University of Exeter.
+
 ## 0.3.0 (beta)
 
 - Security: an address inside an HTML attribute containing `|` no longer gets a link

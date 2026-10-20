@@ -22,7 +22,7 @@ namespace filter_emailautolink\privacy;
  * The filter only rewrites text as it is displayed and stores no personal data.
  *
  * @package    filter_emailautolink
- * @copyright  2026 Auto-link email addresses filter contributors
+ * @copyright  2026 Pierre Camaly de Brosses - University of Exeter
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class provider implements \core_privacy\local\metadata\null_provider {

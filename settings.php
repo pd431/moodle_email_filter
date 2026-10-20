@@ -18,7 +18,7 @@
  * Site settings for the "Auto-link email addresses" text filter.
  *
  * @package    filter_emailautolink
- * @copyright  2026 Auto-link email addresses filter contributors
+ * @copyright  2026 Pierre Camaly de Brosses - University of Exeter
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 

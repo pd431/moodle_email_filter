@@ -18,15 +18,15 @@
  * Version details for the "Auto-link email addresses" text filter.
  *
  * @package    filter_emailautolink
- * @copyright  2026 Auto-link email addresses filter contributors
+ * @copyright  2026 Pierre Camaly de Brosses - University of Exeter
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'filter_emailautolink';
-$plugin->version   = 2026101900;
+$plugin->version   = 2026102000;
 $plugin->requires  = 2024100700; // Moodle 4.5.0.
 $plugin->supported = [405, 503];
 $plugin->maturity  = MATURITY_BETA;
-$plugin->release   = '0.3.0';
+$plugin->release   = '0.3.1';
