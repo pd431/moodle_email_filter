@@ -31,7 +31,7 @@ namespace filter_emailautolink;
  * The email pattern only ever runs against genuine text nodes.
  *
  * @package    filter_emailautolink
- * @copyright  2026 Auto-link email addresses filter contributors
+ * @copyright  2026 Pierre Camaly de Brosses - University of Exeter
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class text_filter extends \core_filters\text_filter {
